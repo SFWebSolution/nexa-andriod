@@ -36,7 +36,6 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -48,7 +47,6 @@ public class MainActivity extends AppCompatActivity {
     private static final int FILE_CHOOSER_REQUEST_CODE = 1002;
 
     private WebView webView;
-    private SwipeRefreshLayout swipeRefreshLayout;
     private ProgressBar progressBar;
     private LinearLayout layoutOffline;
     private Button btnRetry;
@@ -64,7 +62,6 @@ public class MainActivity extends AppCompatActivity {
 
         initViews();
         setupWebView();
-        setupSwipeRefresh();
         setupBackNavigation();
         checkAndRequestAppPermissions();
 
@@ -78,7 +75,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void initViews() {
         webView = findViewById(R.id.webView);
-        swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout);
         progressBar = findViewById(R.id.progressBar);
         layoutOffline = findViewById(R.id.layoutOffline);
         btnRetry = findViewById(R.id.btnRetry);
@@ -92,6 +88,11 @@ public class MainActivity extends AppCompatActivity {
 
     @SuppressLint("SetJavaScriptEnabled")
     private void setupWebView() {
+        // Enable smooth scrolling and disable accidental overscroll refresh
+        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        webView.setVerticalScrollBarEnabled(false);
+        webView.setHorizontalScrollBarEnabled(false);
+
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -146,21 +147,6 @@ public class MainActivity extends AppCompatActivity {
                     startActivity(intent);
                 }
             }
-        });
-    }
-
-    private void setupSwipeRefresh() {
-        swipeRefreshLayout.setColorSchemeResources(R.color.primary, R.color.accent);
-        swipeRefreshLayout.setProgressBackgroundColorSchemeResource(R.color.surface);
-
-        swipeRefreshLayout.setOnRefreshListener(() -> {
-            webView.reload();
-            swipeRefreshLayout.setRefreshing(false);
-        });
-
-        // Disable swipe refresh when scrolling inside webview
-        webView.getViewTreeObserver().addOnScrollChangedListener(() -> {
-            swipeRefreshLayout.setEnabled(webView.getScrollY() == 0);
         });
     }
 
