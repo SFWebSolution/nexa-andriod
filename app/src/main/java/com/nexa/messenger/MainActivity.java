@@ -14,6 +14,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.View;
+import androidx.core.view.WindowInsetsControllerCompat;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.PermissionRequest;
@@ -25,6 +26,9 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.JavascriptInterface;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -43,6 +47,7 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
 
     public static final String APP_URL = "https://nexa-qydr.onrender.com";
+    private static final String PREFS = "nexa_prefs";
     private static final int PERMISSION_REQUEST_CODE = 1001;
     private static final int FILE_CHOOSER_REQUEST_CODE = 1002;
 
@@ -61,6 +66,10 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         initViews();
+        // Paint the window background in the LAST-KNOWN theme before the page
+        // loads, so a returning dark-theme user sees no light flash (and light
+        // stays light). Overridden by setTheme once the page has loaded.
+        updateNativeTheme(getSharedPreferences(PREFS, MODE_PRIVATE).getString("theme", "light"));
         setupWebView();
         setupBackNavigation();
         checkAndRequestAppPermissions();
@@ -115,6 +124,17 @@ public class MainActivity extends AppCompatActivity {
         // Custom User Agent identifying native app
         String defaultUA = settings.getUserAgentString();
         settings.setUserAgentString(defaultUA + " NexaMobileNative/1.0.0");
+
+        // Let the web app tell us its theme so the native window background
+        // always matches (prevents the dark->light flash on the first frame).
+        webView.addJavascriptInterface(new NexaAndroidBridge(), "NexaAndroid");
+        webView.setBackgroundColor(Color.parseColor("#EDF1F7"));
+
+        // Never let Chromium auto-darken our light theme.
+        try {
+            if (Build.VERSION.SDK_INT >= 33) settings.setAlgorithmicDarkeningAllowed(false);
+            else if (Build.VERSION.SDK_INT >= 29) settings.setForceDark(WebSettings.FORCE_DARK_OFF);
+        } catch (Throwable ignored) {}
 
         webView.setWebViewClient(new NexaWebViewClient());
         webView.setWebChromeClient(new NexaWebChromeClient());
@@ -310,5 +330,32 @@ public class MainActivity extends AppCompatActivity {
                 layoutOffline.setVisibility(View.VISIBLE);
             }
         }
+    }
+
+    // JS -> native: keep the window/status/nav bars in sync with the web theme.
+    public class NexaAndroidBridge {
+        @JavascriptInterface
+        public void setTheme(String theme) {
+            updateNativeTheme(theme);
+        }
+    }
+
+    private void updateNativeTheme(String theme) {
+        final boolean dark = "nexa".equals(theme) || "dark".equals(theme);
+        final int bg = dark ? 0xFF060C1E : 0xFFEDF1F7;
+        // Remember for the next cold start so the native window background is
+        // already correct before the page paints (no flash on either theme).
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("theme", dark ? "nexa" : "light").apply();
+        runOnUiThread(() -> {
+            try {
+                getWindow().setBackgroundDrawable(new ColorDrawable(bg));
+                webView.setBackgroundColor(bg);
+                getWindow().setStatusBarColor(bg);
+                getWindow().setNavigationBarColor(bg);
+                WindowInsetsControllerCompat c = new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
+                c.setAppearanceLightStatusBars(!dark);
+                c.setAppearanceLightNavigationBars(!dark);
+            } catch (Throwable ignored) {}
+        });
     }
 }

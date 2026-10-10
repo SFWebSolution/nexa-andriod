@@ -8,4 +8,13 @@
     <color name="text_primary">#FFFFFF</color>
     <color name="text_secondary">#9CA3AF</color>
     <color name="progress_bar">#6366F1</color>
+
+    <!-- Window / WebView background before the page paints. The web app
+         defaults to a LIGHT theme, so the native background must match or the
+         first frame flashes a dark screen. MainActivity repaints this live
+         when the user switches theme (see the NexaAndroid JS bridge). -->
+    <color name="window_background">#EDF1F7</color>
+    <!-- Offline screen text on the light background -->
+    <color name="offline_title">#0D1830</color>
+    <color name="offline_msg">#45536B</color>
 </resources>
