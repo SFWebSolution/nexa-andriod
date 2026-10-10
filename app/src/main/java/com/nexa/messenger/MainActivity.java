@@ -154,7 +154,9 @@ public class MainActivity extends AppCompatActivity {
 
         // Custom User Agent identifying native app
         String defaultUA = settings.getUserAgentString();
-        settings.setUserAgentString(defaultUA + " NexaMobileNative/1.0.0");
+        // Report the REAL installed version so the web layer can tell whether
+        // this device is actually behind before prompting for an update.
+        settings.setUserAgentString(defaultUA + " NexaMobileNative/" + BuildConfig.VERSION_NAME);
 
         // Let the web app tell us its theme so the native window background
         // always matches (prevents the dark->light flash on the first frame).
@@ -368,6 +370,14 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public void setTheme(String theme) {
             updateNativeTheme(theme);
+        }
+
+        // The installed app version. The web layer calls this to gate the update
+        // prompt on the device's real build, so an up-to-date device is never
+        // prompted again (and never sees a duplicate prompt).
+        @JavascriptInterface
+        public String getAppVersion() {
+            return BuildConfig.VERSION_NAME;
         }
 
         // The web app reports the signed-in uid so we can tie the FCM token to it.
