@@ -60,12 +60,12 @@ jobs:
           fi
 
       - name: Build APK with Gradle
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleRelease --stacktrace
 
       - name: Rename and Prepare APK
         run: |
           mkdir -p output_apk
-          cp app/build/outputs/apk/debug/*.apk output_apk/Nexa-Messenger.apk
+          cp app/build/outputs/apk/release/*.apk output_apk/Nexa-Messenger.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
