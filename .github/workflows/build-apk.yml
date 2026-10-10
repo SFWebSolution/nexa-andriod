@@ -27,6 +27,20 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x gradlew
 
+      # google-services.json is a secret and is NOT committed (public repo).
+      # It is injected from the GOOGLE_SERVICES_JSON_B64 repo secret (the file,
+      # base64-encoded). Without it the build still succeeds but push is off.
+      - name: Provide google-services.json
+        env:
+          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON_B64" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 -d > app/google-services.json
+            echo "google-services.json written ($(wc -c < app/google-services.json) bytes)"
+          else
+            echo "::warning::GOOGLE_SERVICES_JSON_B64 secret not set — building without native push"
+          fi
+
       - name: Build APK with Gradle
         run: ./gradlew assembleDebug --stacktrace
 

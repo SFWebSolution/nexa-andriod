@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Default notification channel. Its id ("nexa_default") MUST match
+  NexaMessagingService.DEFAULT_CHANNEL_ID. Created up-front so the channel
+  exists before any message arrives (FCM falls back to a "Miscellaneous"
+  channel otherwise).
+-->
+<resources>
+    <string name="default_notification_channel_id" translatable="false">nexa_default</string>
+</resources>
