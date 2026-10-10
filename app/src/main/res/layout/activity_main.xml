@@ -2,16 +2,17 @@
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/background">
+    android:background="@color/window_background">
 
     <!-- Native Hardware-Accelerated WebView with Pure Smooth Scrolling -->
     <WebView
         android:id="@+id/webView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@color/background"
+        android:background="@color/window_background"
         android:overScrollMode="never"
-        android:scrollbars="none" />
+        android:scrollbars="none"
+        android:forceDarkAllowed="false" />
 
     <!-- Top Loading Progress Indicator -->
     <ProgressBar
@@ -32,7 +33,7 @@
         android:orientation="vertical"
         android:gravity="center"
         android:padding="32dp"
-        android:background="@color/background"
+        android:background="@color/window_background"
         android:visibility="gone">
 
         <ImageView
@@ -46,7 +47,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/error_network_title"
-            android:textColor="@color/text_primary"
+            android:textColor="@color/offline_title"
             android:textSize="20sp"
             android:textStyle="bold"
             android:layout_marginBottom="8dp"/>
@@ -55,7 +56,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/error_network_msg"
-            android:textColor="@color/text_secondary"
+            android:textColor="@color/offline_msg"
             android:textSize="14sp"
             android:gravity="center"
             android:layout_marginBottom="24dp"/>

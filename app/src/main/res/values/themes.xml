@@ -3,9 +3,14 @@
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryVariant">@color/primary_dark</item>
         <item name="colorOnPrimary">@color/text_primary</item>
-        <item name="android:statusBarColor">@color/background</item>
-        <item name="android:navigationBarColor">@color/background</item>
-        <item name="android:windowBackground">@color/background</item>
+        <!-- Match the web app's default LIGHT theme so the very first frame is
+             never a dark flash. MainActivity repaints these live on theme
+             switch (see updateNativeTheme()). -->
+        <item name="android:statusBarColor">@color/window_background</item>
+        <item name="android:navigationBarColor">@color/window_background</item>
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 
     <style name="Theme.NexaMessenger.NoActionBar" parent="Theme.NexaMessenger">

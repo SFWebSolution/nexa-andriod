@@ -2,6 +2,7 @@ package com.nexa.messenger;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.content.SharedPreferences;
 import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
@@ -14,6 +15,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.View;
+import androidx.core.view.WindowInsetsControllerCompat;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.PermissionRequest;
@@ -25,10 +27,23 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.JavascriptInterface;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.Toast;
+
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.messaging.FirebaseMessaging;
+
+import org.json.JSONObject;
+
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
@@ -43,6 +58,12 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
 
     public static final String APP_URL = "https://nexa-qydr.onrender.com";
+    /** True while this activity is visible; the FCM service reads it to avoid double-displaying. */
+    public static boolean isForeground = false;
+    private static final String BACKEND_URL = "https://nexa-backend-e6pq.onrender.com";
+    private static final String PREFS = "nexa_prefs";
+    private static final String KEY_UID = "uid";
+    private static final String KEY_FCM_TOKEN = "fcm_token";
     private static final int PERMISSION_REQUEST_CODE = 1001;
     private static final int FILE_CHOOSER_REQUEST_CODE = 1002;
 
@@ -61,9 +82,15 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         initViews();
+        handleNotificationIntent(getIntent());
+        // Paint the window background in the LAST-KNOWN theme before the page
+        // loads, so a returning dark-theme user sees no light flash (and light
+        // stays light). Overridden by setTheme once the page has loaded.
+        updateNativeTheme(getSharedPreferences(PREFS, MODE_PRIVATE).getString("theme", "light"));
         setupWebView();
         setupBackNavigation();
         checkAndRequestAppPermissions();
+        initFirebase();
 
         // Load the Nexa Messenger App
         if (savedInstanceState != null) {
@@ -71,6 +98,19 @@ public class MainActivity extends AppCompatActivity {
         } else {
             webView.loadUrl(APP_URL);
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        isForeground = true;
+        NexaMessagingService.ensureChannels(this);
+    }
+
+    @Override
+    protected void onPause() {
+        isForeground = false;
+        super.onPause();
     }
 
     private void initViews() {
@@ -115,6 +155,17 @@ public class MainActivity extends AppCompatActivity {
         // Custom User Agent identifying native app
         String defaultUA = settings.getUserAgentString();
         settings.setUserAgentString(defaultUA + " NexaMobileNative/1.0.0");
+
+        // Let the web app tell us its theme so the native window background
+        // always matches (prevents the dark->light flash on the first frame).
+        webView.addJavascriptInterface(new NexaAndroidBridge(), "NexaAndroid");
+        webView.setBackgroundColor(Color.parseColor("#EDF1F7"));
+
+        // Never let Chromium auto-darken our light theme.
+        try {
+            if (Build.VERSION.SDK_INT >= 33) settings.setAlgorithmicDarkeningAllowed(false);
+            else if (Build.VERSION.SDK_INT >= 29) settings.setForceDark(WebSettings.FORCE_DARK_OFF);
+        } catch (Throwable ignored) {}
 
         webView.setWebViewClient(new NexaWebViewClient());
         webView.setWebChromeClient(new NexaWebChromeClient());
@@ -310,5 +361,143 @@ public class MainActivity extends AppCompatActivity {
                 layoutOffline.setVisibility(View.VISIBLE);
             }
         }
+    }
+
+    // JS -> native: keep the window/status/nav bars in sync with the web theme.
+    public class NexaAndroidBridge {
+        @JavascriptInterface
+        public void setTheme(String theme) {
+            updateNativeTheme(theme);
+        }
+
+        // The web app reports the signed-in uid so we can tie the FCM token to it.
+        @JavascriptInterface
+        public void setUser(String uid, String name) {
+            if (uid == null || uid.trim().isEmpty()) return;
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_UID, uid).apply();
+            registerFcmToken();
+        }
+
+        // Hand the pending notification deep link to the web app exactly once.
+        // Returns "" (empty string) when there is nothing to open, which is
+        // unambiguous across the JS bridge.
+        @JavascriptInterface
+        public String getPendingOpenUid() {
+            String uid = consumePendingOpenUid();
+            return uid == null ? "" : uid;
+        }
+    }
+
+    private void updateNativeTheme(String theme) {
+        final boolean dark = "nexa".equals(theme) || "dark".equals(theme);
+        final int bg = dark ? 0xFF060C1E : 0xFFEDF1F7;
+        // Remember for the next cold start so the native window background is
+        // already correct before the page paints (no flash on either theme).
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("theme", dark ? "nexa" : "light").apply();
+        runOnUiThread(() -> {
+            try {
+                getWindow().setBackgroundDrawable(new ColorDrawable(bg));
+                webView.setBackgroundColor(bg);
+                getWindow().setStatusBarColor(bg);
+                getWindow().setNavigationBarColor(bg);
+                WindowInsetsControllerCompat c = new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
+                c.setAppearanceLightStatusBars(!dark);
+                c.setAppearanceLightNavigationBars(!dark);
+            } catch (Throwable ignored) {}
+        });
+    }
+
+    // ── Native FCM ──────────────────────────────────────────────────────
+    private void initFirebase() {
+        try {
+            if (FirebaseApp.getApps(this).isEmpty()) {
+                FirebaseApp.initializeApp(this); // config comes from google-services.json
+            }
+            // Ask for the FCM token up-front. Whether it can be saved depends on
+            // having a uid (we get that from the web app via NexaAndroid.setUser).
+            registerFcmToken();
+        } catch (Throwable t) {
+            // No google-services.json / Firebase not configured — push is simply off.
+            android.util.Log.w("NexaFCM", "Firebase init skipped: " + t.getMessage());
+        }
+    }
+
+    private void registerFcmToken() {
+        if (FirebaseApp.getApps(this).isEmpty()) return;
+        final String uid = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_UID, null);
+        if (uid == null || uid.isEmpty()) return;
+        try {
+            FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
+                if (!task.isSuccessful() || task.getResult() == null) return;
+                String token = task.getResult();
+                String saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_FCM_TOKEN, null);
+                if (token.equals(saved)) return; // already registered this token
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_FCM_TOKEN, token).apply();
+                postFcmToken(uid, token);
+            });
+        } catch (Throwable t) {
+            android.util.Log.w("NexaFCM", "getToken failed: " + t.getMessage());
+        }
+    }
+
+    // POST the token to the shared backend, identical to the web /api/save-token.
+    private void postFcmToken(final String uid, final String token) {
+        new Thread(() -> {
+            HttpURLConnection conn = null;
+            try {
+                URL url = new URL(BACKEND_URL + "/api/save-token");
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(15000);
+                conn.setDoOutput(true);
+                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                JSONObject body = new JSONObject();
+                body.put("uid", uid);
+                body.put("token", token);
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+                }
+                int code = conn.getResponseCode();
+                android.util.Log.i("NexaFCM", "save-token HTTP " + code);
+            } catch (Throwable t) {
+                android.util.Log.w("NexaFCM", "save-token failed: " + t.getMessage());
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        }).start();
+    }
+
+    // ── Notification deep link ──────────────────────────────────────────
+    // NativeMessagingService stores data.chatUid in prefs before launching us.
+    private String consumePendingOpenUid() {
+        SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String uid = sp.getString("pending_open_uid", null);
+        if (uid != null) sp.edit().remove("pending_open_uid").apply();
+        return uid;
+    }
+
+    private void handleNotificationIntent(Intent intent) {
+        if (intent == null) return;
+        String chatUid = intent.getStringExtra("chatUid");
+        if (chatUid != null && !chatUid.isEmpty()) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("pending_open_uid", chatUid).apply();
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        // Bring the pending chat into the already-running web app.
+        handleNotificationIntent(intent);
+        try {
+            String uid = consumePendingOpenUid();
+            if (uid != null) {
+                webView.evaluateJavascript(
+                    "window.__nexaOpenChatFromNative && window.__nexaOpenChatFromNative(" + JSONObject.quote(uid) + ");",
+                    null);
+            }
+        } catch (Throwable ignored) {}
     }
 }

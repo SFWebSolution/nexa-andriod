@@ -2,6 +2,14 @@ plugins {
     id 'com.android.application'
 }
 
+// Apply the Google Services plugin ONLY when google-services.json is present.
+// That file is a secret and is NOT committed (this repo is public); CI writes it
+// from the GOOGLE_SERVICES_JSON secret before building. Without the file the app
+// still compiles — Firebase.initializeApp() just fails and push is skipped.
+if (file('google-services.json').exists()) {
+    apply plugin: 'com.google.gms.google-services'
+}
+
 android {
     namespace 'com.nexa.messenger'
     compileSdk 34
@@ -35,4 +43,9 @@ dependencies {
     implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
     implementation 'androidx.core:core:1.12.0'
     implementation 'androidx.activity:activity:1.8.2'
+
+    // Firebase Cloud Messaging — native push. Firebase Android BoM keeps the
+    // FCM/messaging versions aligned.
+    implementation platform('com.google.firebase:firebase-bom:32.7.4')
+    implementation 'com.google.firebase:firebase-messaging'
 }

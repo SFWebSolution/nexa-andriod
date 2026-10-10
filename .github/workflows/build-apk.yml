@@ -27,6 +27,38 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x gradlew
 
+      # google-services.json is a secret and is NOT committed (public repo).
+      # Injected from a repo secret. Accepts either the raw JSON or its base64
+      # encoding, under any of the common secret names — so whichever way it was
+      # saved, this works (and builds without push if no secret is set).
+      - name: Provide google-services.json
+        env:
+          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          raw=""
+          for name in GOOGLE_SERVICES_JSON_B64 GOOGLE_SERVICES_JSON GOOGLE_SERVICES_JSON_BASE64; do
+            val="${!name}"
+            if [ -n "$val" ]; then raw="$val"; echo "Using secret: $name"; break; fi
+          done
+          if [ -z "$raw" ]; then
+            echo "::warning::No google-services.json secret found — building without native push"
+            exit 0
+          fi
+          compact="$(printf '%s' "$raw" | tr -d '[:space:]')"
+          if [ "${compact:0:1}" = "{" ]; then
+            printf '%s' "$raw" > app/google-services.json
+          else
+            printf '%s' "$compact" | base64 -d > app/google-services.json 2>/dev/null || true
+          fi
+          if [ "$(head -c 1 app/google-services.json)" = "{" ]; then
+            echo "google-services.json written ($(wc -c < app/google-services.json) bytes)"
+          else
+            echo "::error::google-services.json is not valid JSON — check the secret value"
+            exit 1
+          fi
+
       - name: Build APK with Gradle
         run: ./gradlew assembleDebug --stacktrace
 

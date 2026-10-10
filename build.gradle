@@ -1,3 +1,15 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // On the root buildscript classpath so app/build.gradle can apply the
+        // Google Services plugin by id ONLY when google-services.json exists.
+        classpath 'com.google.gms:google-services:4.4.1'
+    }
+}
+
 plugins {
     id 'com.android.application' version '8.2.2' apply false
 }
