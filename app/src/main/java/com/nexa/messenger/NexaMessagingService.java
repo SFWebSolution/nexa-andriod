@@ -56,10 +56,6 @@ public class NexaMessagingService extends FirebaseMessagingService {
     public void onMessageReceived(@NonNull RemoteMessage message) {
         super.onMessageReceived(message);
 
-        // Foreground: the web app handles it (and avoids a duplicate). Only the
-        // native side renders when the app is backgrounded / killed.
-        if (MainActivity.isForeground) return;
-
         Map<String, String> data = message.getData();
         String title = data.get("title");
         String body = data.get("body");
@@ -67,6 +63,13 @@ public class NexaMessagingService extends FirebaseMessagingService {
         if (body == null || body.isEmpty()) body = "You have a new message";
 
         boolean isCall = "true".equals(data.get("isCall"));
+
+        // Calls ALWAYS notify, even in the foreground. This message carries an
+        // android.notification block, so onMessageReceived only runs while the
+        // app is foregrounded and the WebView can never show it (Android WebView
+        // has no Web Push). Skipping here would mean calls never notify at all.
+        // Messages still skip in the foreground: the web app shows those itself.
+        if (MainActivity.isForeground && !isCall) return;
         String msgId = data.get("messageId");
         String chatUid = data.get("chatUid");
         if (chatUid == null || chatUid.isEmpty()) chatUid = data.get("senderUid");
@@ -123,6 +126,8 @@ public class NexaMessagingService extends FirebaseMessagingService {
             NotificationChannel call = new NotificationChannel(
                     CALL_CHANNEL_ID, "Calls", NotificationManager.IMPORTANCE_HIGH);
             call.setDescription("Incoming voice & video calls");
+            // A ringing call should bypass silent mode / Do Not Disturb.
+            call.setBypassDnd(true);
             nm.createNotificationChannel(call);
         }
     }

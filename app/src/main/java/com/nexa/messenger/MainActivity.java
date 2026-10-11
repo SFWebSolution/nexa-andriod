@@ -109,6 +109,10 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onPause() {
+        // The app is still visible unless onStop follows. FCM gives us a very
+        // short window before it would fall back to a system notification, so
+        // the call notification is posted here while we are still "foreground"
+        // (see NexaMessagingService.onMessageReceived).
         isForeground = false;
         super.onPause();
     }
