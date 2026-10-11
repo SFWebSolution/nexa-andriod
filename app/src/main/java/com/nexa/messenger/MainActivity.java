@@ -446,8 +446,15 @@ public class MainActivity extends AppCompatActivity {
             FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
                 if (!task.isSuccessful() || task.getResult() == null) return;
                 String token = task.getResult();
-                String saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_FCM_TOKEN, null);
-                if (token.equals(saved)) return; // already registered this token
+                // Always (re)register with the backend. FCM tokens can be
+                // rotated or invalidated server-side (the backend prunes
+                // "not-registered" tokens on every send), and the app can be
+                // reinstalled or have its Firestore user doc replaced — in all
+                // of those cases the device keeps the SAME token value while
+                // the server no longer has it. The old `token.equals(saved)`
+                // guard then skipped the POST forever and the device silently
+                // stopped receiving pushes. /api/save-token is idempotent
+                // (arrayUnion), so re-posting on every launch is safe.
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_FCM_TOKEN, token).apply();
                 postFcmToken(uid, token);
             });
