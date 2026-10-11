@@ -40,6 +40,8 @@ import com.google.firebase.messaging.FirebaseMessaging;
 
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -51,6 +53,7 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -65,6 +68,11 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_UID = "uid";
     private static final String KEY_FCM_TOKEN = "fcm_token";
     private static final int PERMISSION_REQUEST_CODE = 1001;
+    // Direct download of the latest signed build. Same keystore every build, so
+    // a new version installs OVER the old one - the user never uninstalls.
+    private static final String LATEST_APK_URL =
+            "https://github.com/SFWebSolution/nexa-andriod/releases/download/latest/Nexa-Messenger.apk";
+    private static final int INSTALL_PERMISSION_REQUEST_CODE = 1003;
     private static final int FILE_CHOOSER_REQUEST_CODE = 1002;
 
     private WebView webView;
@@ -405,6 +413,73 @@ public class MainActivity extends AppCompatActivity {
         public String getPendingOpenUid() {
             String uid = consumePendingOpenUid();
             return uid == null ? "" : uid;
+        }
+
+        // In-app update: download the latest APK and hand it to the system
+        // installer. Called from the web "Update now" button.
+        @JavascriptInterface
+        public void installUpdate() {
+            runOnUiThread(() -> downloadAndInstallUpdate());
+        }
+    }
+
+    /** Downloads the latest APK to cache and launches the system installer. */
+    private void downloadAndInstallUpdate() {
+        Toast.makeText(this, "Downloading update\u2026", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            File apk = null;
+            try {
+                File dir = new File(getCacheDir(), "updates");
+                if (!dir.exists()) dir.mkdirs();
+                apk = new File(dir, "nexa-update.apk");
+                if (apk.exists()) apk.delete();
+
+                URL url = new URL(LATEST_APK_URL);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setInstanceFollowRedirects(true);
+                conn.setConnectTimeout(20000);
+                conn.setReadTimeout(60000);
+                conn.connect();
+                if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                    throw new Exception("HTTP " + conn.getResponseCode());
+                }
+                try (InputStream in = conn.getInputStream();
+                     OutputStream out = new java.io.FileOutputStream(apk)) {
+                    byte[] buf = new byte[16384];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                }
+                conn.disconnect();
+            } catch (Exception e) {
+                final String msg = e.getMessage();
+                runOnUiThread(() -> Toast.makeText(MainActivity.this,
+                        "Update download failed: " + msg, Toast.LENGTH_LONG).show());
+                return;
+            }
+
+            final File f = apk;
+            runOnUiThread(() -> launchInstaller(f));
+        }).start();
+    }
+
+    private void launchInstaller(File apk) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                    && !getPackageManager().canRequestPackageInstalls()) {
+                Toast.makeText(this, "Allow Nexa to install this update, then tap Update again.",
+                        Toast.LENGTH_LONG).show();
+                Intent settings = new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getPackageName()));
+                startActivityForResult(settings, INSTALL_PERMISSION_REQUEST_CODE);
+                return;
+            }
+            Uri apkUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", apk);
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+        } catch (Exception e) {
+            Toast.makeText(this, "Could not start installer: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
     }
 
