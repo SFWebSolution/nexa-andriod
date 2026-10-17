@@ -36,12 +36,36 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.NexaMessenger.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- App Link: an invite link (join.html) opens straight in the app.
+                 autoVerify makes Android check
+                 https://nexa-qydr.onrender.com/.well-known/assetlinks.json;
+                 when it matches, the OS opens the app with no chooser dialog.
+                 The pathPrefix keeps this scoped to invite links only. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https"
+                      android:host="nexa-qydr.onrender.com"
+                      android:pathPrefix="/join.html" />
+            </intent-filter>
+
+            <!-- Custom scheme fallback (nexa://join.html?...). Used when the
+                 site is served from a domain other than the one above. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nexa" />
             </intent-filter>
         </activity>
 
